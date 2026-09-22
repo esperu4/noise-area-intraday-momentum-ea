@@ -2,6 +2,8 @@
 
 `NoiseAreaIntradayMomentum.pine` is a separate Pine Script v5 strategy implementation of the shared Noise Area methodology. Open TradingView Pine Editor, paste the file, save it as a new strategy, and add it to a **1-minute chart**. Keep the chart timezone independent of the strategy because the script uses `America/New_York` for the session.
 
+For the long-form version, use `NoiseAreaIntradayMomentum_Detailed.pine`. It contains the same executable logic with an expanded design/audit preamble, platform-parity notes, no-trade diagnosis guidance, and a module-by-module review contract modeled after the detailed cTrader variant. Use only one of the two Pine files on a chart at a time.
+
 The strategy stores completed New York sessions in memory, calculates the gap-adjusted Noise Area from the configured prior-session lookback, resets VWAP at 09:30 New York, checks completed-bar breakouts at the configured interval, and supports optional KAMA entry filtering, fixed-risk sizing, break-even, partial close, ATR trailing, opposite-signal flips, daily loss lock, and end-of-day flattening.
 
 Use at least 34 completed New York sessions for the default 14-session lookback and preferably much more for research. The first valid checkpoint is 10:00 New York by default; the opening bar is never used as an entry checkpoint.
