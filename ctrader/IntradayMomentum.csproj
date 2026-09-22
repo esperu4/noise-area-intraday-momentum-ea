@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>IntradayMomentum</RootNamespace>
+    <AssemblyName>IntradayMomentum</AssemblyName>
+  </PropertyGroup>
+  <!-- Build the adapter inside cTrader Algo, which supplies cAlgo.API. The SDK is intentionally not vendored. -->
+  <ItemGroup>
+    <Compile Include="Models/**/*.cs" />
+    <Compile Include="Core/**/*.cs" />
+    <Compile Include="Indicators/**/*.cs" />
+    <Compile Include="Utils/**/*.cs" />
+    <Compile Include="Robots/**/*.cs" />
+  </ItemGroup>
+</Project>
