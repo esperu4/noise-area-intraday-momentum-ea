@@ -139,6 +139,7 @@ namespace IntradayMomentum
         [Parameter("Daily Loss Limit %", Group = "12 - PROP / ACCOUNT RISK", DefaultValue = 2.0)] public double DailyLossLimit { get; set; }
         [Parameter("Maximum Spread (pips)", Group = "13 - EXECUTION", DefaultValue = 5.0)] public double MaximumSpread { get; set; }
         [Parameter("Trade Label", Group = "13 - EXECUTION", DefaultValue = "NoiseAreaEA")] public string TradeLabel { get; set; }
+        [Parameter("Diagnostics", Group = "15 - LOGGING / DEBUG", DefaultValue = true)] public bool Diagnostics { get; set; }
 
         private readonly NoiseAreaEngine _noise = new NoiseAreaEngine(); private readonly VwapEngine _vwap = new VwapEngine(); private readonly KamaEngine _kama = new KamaEngine(); private readonly AtrEngine _atr = new AtrEngine(); private readonly TradeManager _manager = new TradeManager();
         private ExecutionManager _execution; private PositionLifecycle _lifecycle; private DateTime _riskDay, _lastSignal = DateTime.MinValue; private double _dailyBaseline; private bool _riskLocked;
@@ -146,7 +147,9 @@ namespace IntradayMomentum
         protected override void OnStart()
         {
             if (NoiseLookback < 2 || NoiseMultiplier <= 0 || SignalInterval <= 0 || KamaFast < 1 || KamaSlow <= KamaFast || PartialClosePercent <= 0 || PartialClosePercent >= 100 || AtrPeriod < 1 || AtrMultiplier <= 0 || RiskPerTrade <= 0) throw new ArgumentException("Invalid strategy parameters");
-            _execution = new ExecutionManager(this); _riskDay = ToNewYork(Server.Time).Date; _dailyBaseline = Account.Equity; Print("WARNING=AUTOMATED_STRATEGY VERIFY_SYMBOL_TIMEZONE_RISK_VOLUME_SPREAD");
+            _execution = new ExecutionManager(this); _riskDay = ToNewYork(Server.Time).Date; _dailyBaseline = Account.Equity;
+            Print("EVENT=START ENABLED={0} SYMBOL={1} LOOKBACK={2} INTERVAL={3} SESSION=09:30-16:00_NEW_YORK LABEL={4}", StrategyEnabled, SymbolName, NoiseLookback, SignalInterval, TradeLabel);
+            Print("WARNING=AUTOMATED_STRATEGY VERIFY_SYMBOL_TIMEZONE_RISK_VOLUME_SPREAD");
         }
 
         protected override void OnBar()
@@ -156,13 +159,25 @@ namespace IntradayMomentum
             if (DailyLossLimit > 0 && Account.Equity <= _dailyBaseline * (1 - DailyLossLimit / 100.0)) _riskLocked = true;
             if (minute < start || minute >= end) { if (ForceFlat) CloseOwn(ExitReason.EndOfDay); return; }
             _vwap.Update(b.High, b.Low, b.Close, b.TickVolume); _atr.Update(b.High, b.Low, b.Close, AtrPeriod); double kama = _kama.Update(b.Close, KamaPeriod, KamaFast, KamaSlow);
-            if (!StrategyEnabled || _riskLocked || Symbol.Spread > MaximumSpread) return;
-            NoiseArea area = BuildArea(local, start, end); if (!area.Valid) return;
+            NoiseArea area = BuildArea(local, start, end);
+            ManagePosition(b.Close, b.High, b.Low);
+            if (!StrategyEnabled) { if (Diagnostics && sessionMinuteForLog(minute, start)) Print("EVENT=NO_TRADE REASON=STRATEGY_DISABLED"); return; }
+            if (_riskLocked) { if (Diagnostics && sessionMinuteForLog(minute, start)) Print("EVENT=NO_TRADE REASON=DAILY_RISK_LOCK EQUITY={0}", Account.Equity); return; }
+            if (Symbol.Spread > MaximumSpread) { if (Diagnostics && sessionMinuteForLog(minute, start)) Print("EVENT=NO_TRADE REASON=SPREAD SPREAD={0} MAX={1}", Symbol.Spread, MaximumSpread); return; }
+            if (!area.Valid) { if (Diagnostics && sessionMinuteForLog(minute, start)) Print("EVENT=NO_TRADE REASON=WARMUP_OR_MISSING_HISTORY COMPLETED_SESSIONS={0} REQUIRED={1}", CompletedSessionCount(local, start, end), NoiseLookback); return; }
             int sessionMinute = minute - start;
             if (sessionMinute <= 0 || sessionMinute % SignalInterval != 0) return;
             Direction direction = b.Close > area.Upper && (KamaMode != KamaMode.EntryFilter || (b.Close > kama && _kama.Slope >= 0)) ? Direction.Long : b.Close < area.Lower && (KamaMode != KamaMode.EntryFilter || (b.Close < kama && _kama.Slope <= 0)) ? Direction.Short : Direction.None;
-            if (direction == Direction.None || local == _lastSignal) return; _lastSignal = local; ProcessSignal(direction, b.Close, local, area);
-            ManagePosition(b.Close, b.High, b.Low);
+            if (direction == Direction.None) { if (Diagnostics) Print("EVENT=NO_SIGNAL TIME={0:O} CLOSE={1} UPPER={2} LOWER={3} VWAP={4}", local, b.Close, area.Upper, area.Lower, _vwap.Value); return; }
+            if (local == _lastSignal) return; _lastSignal = local; ProcessSignal(direction, b.Close, local, area);
+        }
+
+        private bool sessionMinuteForLog(int minute, int start) { int relative = minute - start; return relative >= 0 && relative % SignalInterval == 0; }
+        private int CompletedSessionCount(DateTime current, int start, int end)
+        {
+            var days = new HashSet<DateTime>();
+            for (int i = 0; i < Bars.Count; i++) { DateTime t = ToNewYork(Bars.OpenTimes[i]); int m = t.Hour * 60 + t.Minute; if (t.Date < current.Date && m >= start && m < end) days.Add(t.Date); }
+            return days.Count;
         }
 
         private DateTime ToNewYork(DateTime utc) { try { return TimeZoneInfo.ConvertTimeBySystemTimeZoneId(utc, "America/New_York"); } catch { return TimeZoneInfo.ConvertTimeBySystemTimeZoneId(utc, "Eastern Standard Time"); } }

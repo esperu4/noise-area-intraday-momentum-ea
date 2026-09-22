@@ -4,7 +4,7 @@
 
 Open cTrader Algo and create a C# cBot. Copy the complete contents of `ctrader/Robots/IntradayMomentumBot.cs` into the cBot editor. This is the standalone import and does not require adding the other files. The `ctrader/Core` and `ctrader/Models` files are retained as the modular research source for a multi-file project. Build against the current cTrader Automate API. Attach `IntradayMomentumBot` to a 1-minute chart and choose the chart symbol; do not hard-code ES, NQ, or CFD names.
 
-Before the first run, verify the symbol tick size/value, volume units and step, trading hours, broker timezone, spread, and the effective New York session shown in the dashboard. Start with the Original Paper preset and a demo account.
+Before the first run, verify the symbol tick size/value, volume units and step, trading hours, broker timezone, spread, and the effective New York session shown in the dashboard. Start with the Original Paper preset and a demo account. The safety default is `Strategy Enabled = false`; set it to `true` for a controlled backtest. The bot now prints `EVENT=NO_TRADE` reasons for disabled state, insufficient completed sessions, spread, or daily risk lock. With the default 14-session lookback, the test range must contain at least 14 completed New York sessions before the first eligible signal.
 
 ## Backtest
 
