@@ -1,0 +1,314 @@
+//@version=5
+strategy("Noise Area Intraday Momentum — Research", overlay=true, pyramiding=0,
+     process_orders_on_close=true, calc_on_order_fills=true,
+     initial_capital=100000, commission_type=strategy.commission.percent,
+     commission_value=0.0, slippage=0)
+
+// This script is a TradingView research/backtest implementation. It preserves
+// the shared strategy rules but cannot reproduce broker-specific execution,
+// tick-volume quality, or terminal restart state exactly.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────
+g_strategy = "01 - Core Strategy"
+enableStrategy = input.bool(true, "Strategy Enabled", group=g_strategy)
+allowLong = input.bool(true, "Allow Long", group=g_strategy)
+allowShort = input.bool(true, "Allow Short", group=g_strategy)
+allowOppositeFlip = input.bool(true, "Allow Opposite-Signal Flip", group=g_strategy)
+
+const string TZ = "America/New_York"
+g_session = "02 - Session & Time"
+sessionInput = input.session("0930-1600:23456", "New York Session", group=g_session)
+forceFlat = input.bool(true, "Force Flat At Session End", group=g_session)
+allowOvernight = input.bool(false, "Allow Overnight", group=g_session)
+
+g_noise = "03 - Noise Area"
+lookbackSessions = input.int(14, "Noise Area Lookback (sessions)", minval=2, group=g_noise)
+volMultiplier = input.float(1.0, "Noise Area Volatility Multiplier", minval=0.01, group=g_noise)
+
+g_entry = "04 - Entry Engine"
+checkMinutes = input.int(30, "Signal Check Interval (minutes)", minval=1, group=g_entry)
+firstSignalMinutes = input.int(30, "First Signal Minutes After Open", minval=1, group=g_entry)
+minimumBreakout = input.float(0.0, "Minimum Breakout Distance (price)", minval=0.0, group=g_entry)
+
+g_kama = "05 - KAMA"
+kamaMode = input.string("OFF", "KAMA Mode", options=["OFF", "ENTRY FILTER", "EXIT FILTER", "REPLACE INTERVAL"], group=g_kama)
+kamaPeriod = input.int(10, "KAMA Period", minval=2, group=g_kama)
+kamaFast = input.int(2, "KAMA Fast Period", minval=1, group=g_kama)
+kamaSlow = input.int(30, "KAMA Slow Period", minval=2, group=g_kama)
+kamaSlopeLookback = input.int(1, "KAMA Slope Lookback", minval=1, group=g_kama)
+kamaMinSlope = input.float(0.0, "KAMA Minimum Slope", minval=0.0, group=g_kama)
+
+g_risk = "06 - Position Sizing"
+riskMode = input.string("FIXED RISK %", "Position Sizing Mode", options=["FIXED RISK %", "FIXED QTY", "PERCENT OF EQUITY"], group=g_risk)
+riskPercent = input.float(0.25, "Risk Per Trade (%)", minval=0.01, group=g_risk)
+fixedQty = input.float(1.0, "Fixed Quantity", minval=0.000001, group=g_risk)
+equityPercent = input.float(10.0, "Percent Of Equity", minval=0.01, maxval=100, group=g_risk)
+
+g_stop = "07 - Stops & Management"
+initialStopMode = input.string("OPPOSITE BAND", "Initial Stop Mode", options=["OPPOSITE BAND", "VWAP/BAND", "ATR", "FIXED DISTANCE"], group=g_stop)
+fixedStopDistance = input.float(0.0, "Fixed Stop Distance", minval=0.0, group=g_stop)
+atrPeriod = input.int(14, "ATR Period", minval=1, group=g_stop)
+atrMultiplier = input.float(2.0, "ATR Multiplier", minval=0.1, group=g_stop)
+breakEvenR = input.float(1.5, "Break-even Trigger (R)", minval=0.1, group=g_stop)
+breakEvenBuffer = input.float(0.0, "Break-even Buffer", minval=0.0, group=g_stop)
+partialEnabled = input.bool(true, "Partial Close Enabled", group=g_stop)
+partialTriggerR = input.float(1.5, "Partial Close Trigger (R)", minval=0.1, group=g_stop)
+partialPercent = input.float(50.0, "Partial Close Percentage", minval=1, maxval=99, group=g_stop)
+trailEnabled = input.bool(true, "ATR Trail Enabled", group=g_stop)
+executionMode = input.string("RESEARCH", "Execution Fidelity Mode", options=["RESEARCH", "LIVE"], group=g_stop)
+
+g_risk2 = "08 - Account Risk"
+dailyLossLimitEnabled = input.bool(true, "Enable Daily Loss Limit", group=g_risk2)
+dailyLossLimit = input.float(2.0, "Daily Loss Limit (%)", minval=0.01, group=g_risk2)
+maxTradesDay = input.int(10, "Maximum Trades Per Day", minval=1, group=g_risk2)
+
+g_display = "09 - Display / Diagnostics"
+showBands = input.bool(true, "Show Noise Area", group=g_display)
+showVWAP = input.bool(true, "Show VWAP", group=g_display)
+showKAMA = input.bool(false, "Show KAMA", group=g_display)
+showDashboard = input.bool(true, "Show Dashboard", group=g_display)
+diagnostics = input.bool(true, "Diagnostics", group=g_display)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session history. Each completed session stores its open and minute closes.
+// ─────────────────────────────────────────────────────────────────────────────
+type SessionData
+    int dayKey
+    float openPrice
+    array<float> closes
+
+var array<SessionData> history = array.new<SessionData>()
+var SessionData current = na
+var int sessionMinutes = na
+var int currentDayKey = na
+var float sessionOpen = na
+var float previousSessionClose = na
+var float cumPV = 0.0
+var float cumVolume = 0.0
+var bool inSessionPrev = false
+var int tradesToday = 0
+var float dayStartEquity = na
+var bool dailyLocked = false
+var bool partialTaken = false
+var float entryPrice = na
+var float initialStop = na
+var float oneR = na
+var float bestFavorable = na
+var float activeStop = na
+var int lastCheckpoint = na
+
+f_dayKey(int t) => year(t, TZ) * 10000 + month(t, TZ) * 100 + dayofmonth(t, TZ)
+f_minutes(int t) => hour(t, TZ) * 60 + minute(t, TZ)
+f_sessionMinutes() => (16 * 60) - (9 * 60 + 30)
+f_checkpoint(int offset) => offset >= firstSignalMinutes and (offset - firstSignalMinutes) % checkMinutes == 0
+
+inSession = not na(time(timeframe.period, sessionInput, TZ))
+newSession = inSession and not inSessionPrev
+endSession = not inSession and inSessionPrev
+nyTime = time
+nyDay = f_dayKey(nyTime)
+nyMinute = f_minutes(nyTime)
+offset = nyMinute - (9 * 60 + 30)
+
+if barstate.isfirst
+    sessionMinutes := f_sessionMinutes()
+    dayStartEquity := strategy.equity
+
+if newSession
+    if not na(current)
+        array.push(history, current)
+        if array.size(history) > 250
+            array.shift(history)
+        previousSessionClose := array.get(current.closes, array.size(current.closes) - 1)
+    currentDayKey := nyDay
+    sessionOpen := open
+    current := SessionData.new(nyDay, open, array.new_float(sessionMinutes, na))
+    cumPV := 0.0
+    cumVolume := 0.0
+    tradesToday := 0
+    dailyLocked := false
+    partialTaken := false
+    entryPrice := na
+    initialStop := na
+    oneR := na
+    bestFavorable := na
+    activeStop := na
+    lastCheckpoint := na
+    dayStartEquity := strategy.equity
+
+if inSession and not na(current)
+    int idx = math.min(math.max(offset, 0), sessionMinutes - 1)
+    array.set(current.closes, idx, close)
+    float vol = nz(volume, 0)
+    cumPV += hlc3 * vol
+    cumVolume += vol
+
+// Compute historical Sigma for the current time-of-day using completed sessions only.
+float sigma = na
+if inSession and not na(current) and array.size(history) >= lookbackSessions and offset >= 0 and offset < sessionMinutes
+    float total = 0.0
+    int used = 0
+    int first = math.max(0, array.size(history) - lookbackSessions)
+    for j = first to array.size(history) - 1
+        SessionData s = array.get(history, j)
+        float c = array.get(s.closes, offset)
+        if not na(c) and s.openPrice != 0
+            total += math.abs(c / s.openPrice - 1.0)
+            used += 1
+    sigma := used >= lookbackSessions ? total / used : na
+
+float prevClose = previousSessionClose
+float upperAnchor = math.max(sessionOpen, prevClose)
+float lowerAnchor = math.min(sessionOpen, prevClose)
+float upperBand = not na(sigma) ? upperAnchor * (1 + volMultiplier * sigma) : na
+float lowerBand = not na(sigma) ? lowerAnchor * (1 - volMultiplier * sigma) : na
+float sessionVWAP = cumVolume > 0 ? cumPV / cumVolume : na
+
+// Standard KAMA.
+priceSource = close
+change = math.abs(priceSource - priceSource[kamaPeriod])
+volatility = ta.sum(math.abs(priceSource - priceSource[1]), kamaPeriod)
+er = volatility != 0 ? change / volatility : 0.0
+fastSC = 2.0 / (kamaFast + 1)
+slowSC = 2.0 / (kamaSlow + 1)
+sc = math.pow(er * (fastSC - slowSC) + slowSC, 2)
+var float kama = na
+kama := na(kama[1]) ? priceSource : kama[1] + sc * (priceSource - kama[1])
+kamaSlope = kama - kama[kamaSlopeLookback]
+atr = ta.atr(atrPeriod)
+
+// Account-risk gate.
+if dailyLossLimitEnabled and not na(dayStartEquity) and strategy.equity <= dayStartEquity * (1 - dailyLossLimit / 100)
+    dailyLocked := true
+
+// Signals use the completed current bar and scheduled checkpoints. REPLACE INTERVAL is explicit experimental mode.
+bool checkNow = inSession and not na(upperBand) and (kamaMode == "REPLACE INTERVAL" or f_checkpoint(offset))
+longSignal = checkNow and close > upperBand + minimumBreakout and (kamaMode != "ENTRY FILTER" or (close > kama and kamaSlope >= kamaMinSlope))
+shortSignal = checkNow and close < lowerBand - minimumBreakout and (kamaMode != "ENTRY FILTER" or (close < kama and kamaSlope <= -kamaMinSlope))
+
+f_qty(float stopDistance) =>
+    float q = fixedQty
+    if riskMode == "FIXED RISK %"
+        float pointValue = syminfo.pointvalue > 0 ? syminfo.pointvalue : 1.0
+        q := stopDistance > 0 ? (strategy.equity * riskPercent / 100) / (stopDistance * pointValue) : 0
+    else if riskMode == "PERCENT OF EQUITY"
+        q := (strategy.equity * equityPercent / 100) / close
+    math.max(q, 0)
+
+f_initialStop(bool isLong, float refPrice) =>
+    float st = isLong ? lowerBand : upperBand
+    if initialStopMode == "VWAP/BAND" and not na(sessionVWAP)
+        st := isLong ? math.min(lowerBand, sessionVWAP) : math.max(upperBand, sessionVWAP)
+    else if initialStopMode == "ATR"
+        st := isLong ? refPrice - atr * atrMultiplier : refPrice + atr * atrMultiplier
+    else if initialStopMode == "FIXED DISTANCE" and fixedStopDistance > 0
+        st := isLong ? refPrice - fixedStopDistance : refPrice + fixedStopDistance
+    st
+
+// Entry and opposite-signal handling.
+canEnter = enableStrategy and not dailyLocked and tradesToday < maxTradesDay and strategy.position_size == 0
+if longSignal and allowLong and canEnter
+    float st = f_initialStop(true, close)
+    if st < close and not na(st)
+        float q = f_qty(close - st)
+        if q > 0
+            strategy.entry("Long", strategy.long, qty=q, comment="NoiseArea LONG")
+            entryPrice := close
+            initialStop := st
+            oneR := close - st
+            activeStop := st
+            bestFavorable := high
+            tradesToday += 1
+            lastCheckpoint := bar_index
+if shortSignal and allowShort and canEnter
+    float st = f_initialStop(false, close)
+    if st > close and not na(st)
+        float q = f_qty(st - close)
+        if q > 0
+            strategy.entry("Short", strategy.short, qty=q, comment="NoiseArea SHORT")
+            entryPrice := close
+            initialStop := st
+            oneR := st - close
+            activeStop := st
+            bestFavorable := low
+            tradesToday += 1
+            lastCheckpoint := bar_index
+
+// Opposite flips are explicit and never create simultaneous positions.
+if strategy.position_size > 0 and shortSignal and allowShort and allowOppositeFlip
+    strategy.close("Long", comment="Opposite SHORT signal")
+if strategy.position_size < 0 and longSignal and allowLong and allowOppositeFlip
+    strategy.close("Short", comment="Opposite LONG signal")
+
+// Management. Research mode evaluates at checkpoints; LIVE mode updates every bar.
+manageNow = executionMode == "LIVE" or (inSession and f_checkpoint(offset))
+if strategy.position_size > 0 and not na(oneR) and manageNow
+    bestFavorable := math.max(nz(bestFavorable, high), high)
+    rNow = (close - strategy.position_avg_price) / oneR
+    if rNow >= breakEvenR
+        float be = strategy.position_avg_price + breakEvenBuffer
+        if not partialTaken and partialEnabled and rNow >= partialTriggerR
+            strategy.close("Long", qty_percent=partialPercent, comment="Partial LONG")
+            partialTaken := true
+        if trailEnabled
+            activeStop := math.max(nz(activeStop, be), math.max(be, bestFavorable - atr * atrMultiplier))
+        else
+            activeStop := math.max(nz(activeStop, be), be)
+    if not na(activeStop) and activeStop < close
+        strategy.exit("Long Stop", "Long", stop=activeStop)
+
+if strategy.position_size < 0 and not na(oneR) and manageNow
+    bestFavorable := math.min(nz(bestFavorable, low), low)
+    rNow = (strategy.position_avg_price - close) / oneR
+    if rNow >= breakEvenR
+        float be = strategy.position_avg_price - breakEvenBuffer
+        if not partialTaken and partialEnabled and rNow >= partialTriggerR
+            strategy.close("Short", qty_percent=partialPercent, comment="Partial SHORT")
+            partialTaken := true
+        if trailEnabled
+            activeStop := math.min(nz(activeStop, be), math.min(be, bestFavorable + atr * atrMultiplier))
+        else
+            activeStop := math.min(nz(activeStop, be), be)
+    if not na(activeStop) and activeStop > close
+        strategy.exit("Short Stop", "Short", stop=activeStop)
+
+if forceFlat and not allowOvernight and endSession
+    strategy.close_all(comment="End of New York session")
+
+inSessionPrev := inSession
+
+// Visuals and diagnostics.
+plot(showBands ? upperBand : na, "Upper Noise Band", color=color.new(color.red, 0), linewidth=2)
+plot(showBands ? lowerBand : na, "Lower Noise Band", color=color.new(color.blue, 0), linewidth=2)
+plot(showVWAP and inSession ? sessionVWAP : na, "Session VWAP", color=color.new(color.orange, 0), linewidth=2)
+plot(showKAMA and kamaMode != "OFF" ? kama : na, "KAMA", color=color.new(color.aqua, 0), linewidth=2)
+plot(strategy.position_size != 0 ? activeStop : na, "Current Stop", color=color.new(color.white, 0), style=plot.style_linebr)
+plotshape(longSignal and allowLong, title="Long Signal", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.tiny, text="L")
+plotshape(shortSignal and allowShort, title="Short Signal", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny, text="S")
+
+var table dash = table.new(position.top_right, 2, 8, border_width=1)
+if showDashboard and barstate.islast
+    table.cell(dash, 0, 0, "Noise Area", text_color=color.white, bgcolor=color.gray)
+    table.cell(dash, 1, 0, "Pine v5", text_color=color.white, bgcolor=color.gray)
+    table.cell(dash, 0, 1, "Session", text_color=color.white)
+    table.cell(dash, 1, 1, inSession ? "09:30–16:00 NY" : "CLOSED", text_color=color.white)
+    table.cell(dash, 0, 2, "History", text_color=color.white)
+    table.cell(dash, 1, 2, str.tostring(array.size(history)) + "/" + str.tostring(lookbackSessions), text_color=color.white)
+    table.cell(dash, 0, 3, "Sigma", text_color=color.white)
+    table.cell(dash, 1, 3, na(sigma) ? "WARMUP" : str.tostring(sigma, format.mintick), text_color=color.white)
+    table.cell(dash, 0, 4, "VWAP volume", text_color=color.white)
+    table.cell(dash, 1, 4, "TradingView volume", text_color=color.white)
+    table.cell(dash, 0, 5, "Risk lock", text_color=color.white)
+    table.cell(dash, 1, 5, dailyLocked ? "ACTIVE" : "CLEAR", text_color=dailyLocked ? color.red : color.lime)
+    table.cell(dash, 0, 6, "Signal", text_color=color.white)
+    table.cell(dash, 1, 6, longSignal ? "LONG" : shortSignal ? "SHORT" : "NONE", text_color=color.white)
+    table.cell(dash, 0, 7, "Mode", text_color=color.white)
+    table.cell(dash, 1, 7, executionMode, text_color=color.white)
+
+if diagnostics and barstate.islast and enableStrategy and na(sigma) and inSession
+    label.new(bar_index, high, "NO_TRADE: warmup/history", style=label.style_label_down, textcolor=color.white, color=color.orange, size=size.tiny)
+
+alertcondition(longSignal and allowLong, "Noise Area Long", "Noise Area LONG signal")
+alertcondition(shortSignal and allowShort, "Noise Area Short", "Noise Area SHORT signal")
