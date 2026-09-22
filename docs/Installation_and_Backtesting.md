@@ -2,7 +2,7 @@
 
 ## Install
 
-Open cTrader Algo, create or open a C# cBot project, and add the files under `ctrader/` while preserving namespaces. Build against the current cTrader Automate API. Attach `IntradayMomentumBot` to a 1-minute chart and choose the chart symbol; do not hard-code ES, NQ, or CFD names.
+Open cTrader Algo and create a C# cBot. Copy the complete contents of `ctrader/Robots/IntradayMomentumBot.cs` into the cBot editor. This is the standalone import and does not require adding the other files. The `ctrader/Core` and `ctrader/Models` files are retained as the modular research source for a multi-file project. Build against the current cTrader Automate API. Attach `IntradayMomentumBot` to a 1-minute chart and choose the chart symbol; do not hard-code ES, NQ, or CFD names.
 
 Before the first run, verify the symbol tick size/value, volume units and step, trading hours, broker timezone, spread, and the effective New York session shown in the dashboard. Start with the Original Paper preset and a demo account.
 

@@ -22,7 +22,7 @@ This is research software, not a performance claim or investment advice. Run a 1
 
 ## Build status
 
-The sandbox used to author this repository does not include the cTrader Automate SDK or the .NET compiler. The core is deliberately SDK-independent; compile the adapter in cTrader Algo using the current platform SDK. The test harness uses the available Python runtime and mirrors the same formulas for smoke validation. Any SDK-specific limitation is recorded in `docs/TEST_REPORT.md`.
+The sandbox used to author this repository does not include the cTrader Automate SDK or the .NET compiler. For a single-file cTrader import, copy the complete contents of `ctrader/Robots/IntradayMomentumBot.cs` into a new cBot; that file is self-contained. The `ctrader/Core` and `ctrader/Models` files are retained for the modular multi-file research project. The test harness uses the available Python runtime and mirrors the same formulas for smoke validation. Any SDK-specific limitation is recorded in `docs/TEST_REPORT.md`.
 
 ## Safety defaults
 
