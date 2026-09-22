@@ -9,3 +9,4 @@
 - Added self-contained MT5 Expert Advisor with netting/hedging execution paths and trade-server retcode diagnostics.
 - Added MT5 installation and operational notes.
 - Added a separate TradingView Pine Script v5 research strategy with New York session history, Noise Area bands, VWAP, KAMA, and trade management.
+- Migrated both Pine strategy variants to Pine v6 and replaced the unavailable `ta.sum` call with an explicit rolling-sum helper.
