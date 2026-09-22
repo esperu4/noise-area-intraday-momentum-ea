@@ -390,9 +390,11 @@ namespace cAlgo.Robots
             }
             _sigma = new double[_sessionMinutes];
 
-            _atrIndicator = Indicators.AverageTrueRange(Bars, AtrPeriod, MovingAverageType.Wilder) as AverageTrueRange
-                             ?? Indicators.AverageTrueRange(AtrPeriod, MovingAverageType.Wilder);
-            _initAtrIndicator = Indicators.AverageTrueRange(InitialAtrPeriod, MovingAverageType.Wilder);
+            // This cTrader SDK exposes Exponential but not Wilder in MovingAverageType.
+            // ATR remains valid; the smoothing choice is made explicit for portability.
+            _atrIndicator = Indicators.AverageTrueRange(Bars, AtrPeriod, MovingAverageType.Exponential) as AverageTrueRange
+                             ?? Indicators.AverageTrueRange(AtrPeriod, MovingAverageType.Exponential);
+            _initAtrIndicator = Indicators.AverageTrueRange(InitialAtrPeriod, MovingAverageType.Exponential);
 
             _dayStartEquity = Account.Equity;
             _peakEquity = Account.Equity;
