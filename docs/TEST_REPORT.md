@@ -20,8 +20,8 @@ The repository includes `tests/test_core.py`, which can be run with `python3 -m 
 | Invalid size / stop rejection | PASS in core contract | `PositionSizer` returns zero and adapter rejects invalid-side stops. |
 | 14 vs 90 sessions | PASS in core contract | Lookback is configurable and warmup requires enough sessions. |
 | KAMA OFF equivalence | PASS in core contract | Entry filter is only applied for `KamaMode.EntryFilter`. |
-| cTrader/MT5 equivalence | NOT RUN | MT5 is intentionally deferred until cTrader is debugged. |
+| cTrader/MT5 equivalence | NOT RUN | MT5 source is now present; identical-data terminal comparison remains to be run. |
 
 ## Environment limitation
 
-The authoring sandbox does not provide the cTrader Automate SDK or a .NET compiler. Therefore an SDK-backed compile and visual backtest cannot honestly be marked PASS here. The adapter is isolated in `ExecutionManager` and `IntradayMomentumBot`, including DST-aware New York conversion and prior-session construction; build it inside cTrader Algo against the current API and run the runtime cases above. Persistent restart reconstruction, broker-specific stop/freeze validation, and terminal-level visual behavior remain explicit runtime checks. This is an explicit known limitation, not a production-readiness claim.
+The authoring sandbox does not provide the cTrader Automate SDK, MetaEditor, an MQL5 compiler, or a trading terminal. Therefore SDK-backed compilation and visual backtests cannot honestly be marked PASS here. The self-contained MT5 adapter checks trade-server retcodes and handles netting/hedging partial-close paths, but it still requires MetaEditor compilation and Strategy Tester/demo verification on the user’s broker. Persistent restart reconstruction, broker-specific stop/freeze validation, and terminal-level visual behavior remain explicit runtime checks. This is an explicit known limitation, not a production-readiness claim.

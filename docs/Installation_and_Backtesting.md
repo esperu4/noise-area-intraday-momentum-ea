@@ -12,6 +12,12 @@ Use 1-minute data with at least `NoiseAreaLookbackDays + 20` completed sessions;
 
 The original research mode evaluates signal and research stops at scheduled checkpoints. Live mode may maintain broker-side protective stops and therefore is not identical to a checkpoint-only historical simulation. Do not compare these modes without labeling the difference.
 
+## MT5 install and execution check
+
+Copy `mt5/IntradayMomentumEA.mq5` to the terminal data folder at `MQL5/Experts/`, open it in MetaEditor, compile, and attach it to a **1-minute** chart. The EA is self-contained and uses `CTrade`; it checks trade-server retcodes after opening, closing, partial closing, and stop modification. It supports both netting and hedging account behavior, uses the configured magic number, and prints `EVENT=NO_TRADE`, `EVENT=NO_SIGNAL`, and `EVENT=TRADE_OPERATION` records.
+
+For the first demo test, leave the default `Strategy Enabled = true`, use a symbol with at least 14 completed New York sessions in the tester, and inspect the Experts log. A successful execution must show `EVENT=TRADE_OPERATION OP=OPEN OK=true` with a successful retcode; an attempted order with an invalid volume, stop, spread, warmup, or risk state is logged instead of being silently ignored. Confirm the broker’s server UTC offset when automatic detection is unreliable and use `Manual Server UTC Offset`.
+
 ## Research matrix
 
 Run the original 14-session / 2% / 4x preset first. Separately compare 90-session / 3% / 8x, KAMA off/on, and custom ATR management off/on. Do not optimize automatically or call a parameter set optimal. Use out-of-sample and walk-forward periods after the baseline is reproducible.

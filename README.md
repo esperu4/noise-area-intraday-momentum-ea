@@ -1,10 +1,10 @@
 # Intraday Momentum / Noise Area EA
 
-Research-grade cTrader Automate implementation of the intraday momentum / Noise Area methodology, with the original strategy and experimental modules kept separate. **MT5 is intentionally deferred until the cTrader implementation is debugged and validated.**
+Research-grade cTrader Automate and MetaTrader 5 implementations of the intraday momentum / Noise Area methodology, with the original strategy and experimental modules kept separate.
 
 ## Current phase
 
-This repository currently delivers the shared mathematical specification, a platform-independent C# research core, and the cTrader Automate adapter. The core can be tested without a trading terminal. The cTrader adapter keeps all broker API calls in `ExecutionManager`/`IntradayMomentumBot`.
+This repository currently delivers the shared mathematical specification, a platform-independent C# research core, the cTrader Automate adapter, and a self-contained MQL5 EA. The core can be tested without a trading terminal. The platform adapters keep broker calls at their execution boundary and emit explicit no-trade diagnostics.
 
 This is research software, not a performance claim or investment advice. Run a 1-minute backtest and demo forward test before considering any live use.
 
@@ -17,12 +17,13 @@ This is research software, not a performance claim or investment advice. Run a 1
 - `ctrader/Models`: immutable-ish domain records and state enums.
 - `ctrader/Utils`: price/volume math and structured logging.
 - `ctrader/Robots/IntradayMomentumBot.cs`: cTrader Automate entry point.
+- `mt5/IntradayMomentumEA.mq5`: self-contained MT5 Expert Advisor for MetaEditor.
 - `tests`: deterministic acceptance tests for the platform-independent core.
 - `research/parameter-presets`: reproducible JSON-style preset notes.
 
 ## Build status
 
-The sandbox used to author this repository does not include the cTrader Automate SDK or the .NET compiler. For a single-file cTrader import, copy the complete contents of `ctrader/Robots/IntradayMomentumBot.cs` into a new cBot; that file is self-contained. The `ctrader/Core` and `ctrader/Models` files are retained for the modular multi-file research project. The test harness uses the available Python runtime and mirrors the same formulas for smoke validation. Any SDK-specific limitation is recorded in `docs/TEST_REPORT.md`.
+The sandbox used to author this repository does not include the cTrader Automate SDK, .NET compiler, MetaEditor, or an MT5 terminal. For a single-file cTrader import, copy the complete contents of `ctrader/Robots/IntradayMomentumBot.cs` into a new cBot. For MT5, copy `mt5/IntradayMomentumEA.mq5` into `MQL5/Experts/` and compile it in MetaEditor. The test harness uses the available Python runtime and mirrors the shared formulas for smoke validation. Terminal-specific limitations are recorded in `docs/TEST_REPORT.md`.
 
 ## Safety defaults
 

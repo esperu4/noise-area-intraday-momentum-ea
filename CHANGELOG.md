@@ -6,4 +6,5 @@
 - Added deterministic, platform-independent C# research core.
 - Added cTrader Automate adapter boundary and structured state model.
 - Added deterministic acceptance-test harness.
-- MT5 implementation intentionally deferred until cTrader validation is complete.
+- Added self-contained MT5 Expert Advisor with netting/hedging execution paths and trade-server retcode diagnostics.
+- Added MT5 installation and operational notes.
