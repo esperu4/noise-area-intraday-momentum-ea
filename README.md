@@ -17,6 +17,7 @@ This is research software, not a performance claim or investment advice. Run a 1
 - `ctrader/Models`: immutable-ish domain records and state enums.
 - `ctrader/Utils`: price/volume math and structured logging.
 - `ctrader/Robots/IntradayMomentumBot.cs`: cTrader Automate entry point.
+- `ctrader/Robots/variants/ClaudeNoiseAreaBot.cs`: separate Claude-generated cTrader variant, compiler-fixed and audited without replacing the original.
 - `mt5/IntradayMomentumEA.mq5`: self-contained MT5 Expert Advisor for MetaEditor.
 - `tests`: deterministic acceptance tests for the platform-independent core.
 - `research/parameter-presets`: reproducible JSON-style preset notes.
