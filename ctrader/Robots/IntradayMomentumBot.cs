@@ -13,7 +13,7 @@ namespace IntradayMomentum
     public struct ResearchBar
     {
         public ResearchBar(DateTime time, double open, double high, double low, double close, double volume)
-        { Time = time; Open = open; High = high; Low = low; Close = close; Volume = volume; }
+        { Time = time; OpenTime = time; Open = open; High = high; Low = low; Close = close; Volume = volume; }
         public DateTime Time, OpenTime; public double Open, High, Low, Close, Volume;
     }
 
@@ -110,7 +110,7 @@ namespace IntradayMomentum
         public bool Modify(Position position, double stop)
         {
             if (position == null) return false; bool valid = position.TradeType == TradeType.Buy ? stop < _robot.Symbol.Bid : stop > _robot.Symbol.Ask; if (!valid) return false;
-            try { TradeResult result = _robot.ModifyPosition(position, stop, position.TakeProfit); return result != null && result.IsSuccessful; } catch (Exception ex) { _robot.Print("EVENT=EXECUTION_FAILURE OP=MODIFY ERROR={0}", ex.Message); return false; }
+            try { TradeResult result = _robot.ModifyPosition(position, stop, position.TakeProfit, ProtectionType.Absolute); return result != null && result.IsSuccessful; } catch (Exception ex) { _robot.Print("EVENT=EXECUTION_FAILURE OP=MODIFY ERROR={0}", ex.Message); return false; }
         }
         public bool Partial(Position position, double volume) { try { TradeResult result = _robot.ClosePosition(position, volume); return result != null && result.IsSuccessful; } catch { return false; } }
         public bool Close(Position position) { try { TradeResult result = _robot.ClosePosition(position); return result != null && result.IsSuccessful; } catch { return false; } }
